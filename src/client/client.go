@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"dlog"
 	"flag"
 	"fmt"
 	"genericsmrproto"
@@ -152,7 +151,7 @@ func main() {
 		before := time.Now()
 
 		for i := 0; i < n+*eps; i++ {
-			dlog.Printf("Sending proposal %d\n", id)
+			// dlog.Printf("Sending proposal %d\n", id)
 			args.CommandId = id
 			if put[i] {
 				args.Command.Op = state.PUT
@@ -180,7 +179,10 @@ func main() {
 			id++
 			if i%100 == 0 {
 				for i := 0; i < N; i++ {
-					writers[i].Flush()
+					// added to catch null pointers to servers that have shutdown
+					log.Printf("Flushing server %d\n", i)
+					// writers[i].Flush()
+					safeFlush(writers[i], i)
 				}
 			}
 		}
@@ -238,6 +240,15 @@ func main() {
 		}
 	}
 	master.Close()
+}
+
+func safeFlush(writer *bufio.Writer, i int) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("discovered during flush that server %d is offline: %s\n", i, err)
+		}
+	}()
+	writer.Flush()
 }
 
 func waitReplies(readers []*bufio.Reader, leader int, n int, done chan bool) {
