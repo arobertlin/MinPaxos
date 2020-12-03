@@ -84,7 +84,7 @@ func (master *Master) run() {
 		for i, node := range master.nodes {
 			err := node.Call("Replica.Ping", new(genericsmrproto.PingArgs), new(genericsmrproto.PingReply))
 			if err != nil {
-				//log.Printf("Replica %d has failed to reply\n", i)
+				log.Printf("Replica %d has failed to reply\n", i)
 				master.alive[i] = false
 				if master.leader[i] {
 					// neet to choose a new leader

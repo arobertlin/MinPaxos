@@ -107,6 +107,7 @@ func main() {
 		if err != nil {
 			log.Printf("Error connecting to replica %d\n", i)
 		}
+		log.Println(servers[i])
 		readers[i] = bufio.NewReader(servers[i])
 		writers[i] = bufio.NewWriter(servers[i])
 	}
@@ -180,9 +181,9 @@ func main() {
 			if i%100 == 0 {
 				for i := 0; i < N; i++ {
 					// added to catch null pointers to servers that have shutdown
-					log.Printf("Flushing server %d\n", i)
-					// writers[i].Flush()
-					safeFlush(writers[i], i)
+					// log.Printf("Flushing server %d\n", i)
+					writers[i].Flush()
+					// safeFlush(writers[i], i)
 				}
 			}
 		}
@@ -249,6 +250,14 @@ func safeFlush(writer *bufio.Writer, i int) {
 		}
 	}()
 	writer.Flush()
+}
+
+func safeRead(reader *bufio.Reader, i int) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("discovered during read that server %d is offline: %s\n", i, err)
+		}
+	}()
 }
 
 func waitReplies(readers []*bufio.Reader, leader int, n int, done chan bool) {
