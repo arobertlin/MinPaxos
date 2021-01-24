@@ -178,11 +178,14 @@ func main() {
 			}
 			//fmt.Println("Sent", id)
 			id++
-			if i%100 == 0 {
-				for i := 0; i < N; i++ {
+			// if i%100 == 0 {
+
+			// flush every message
+			if i%1 == 1 {
+				for j := 0; j < N; j++ {
 					// added to catch null pointers to servers that have shutdown
 					// log.Printf("Flushing server %d\n", i)
-					writers[i].Flush()
+					writers[j].Flush()
 					// safeFlush(writers[i], i)
 				}
 			}

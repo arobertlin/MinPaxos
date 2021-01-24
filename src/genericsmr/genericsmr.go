@@ -128,11 +128,14 @@ func (r *Replica) ConnectToPeers() {
 
 	//connect to peers
 	for i := 0; i < int(r.Id); i++ {
+		log.Printf("Server %v is trying to connect to server %v\n", r.Id, i)
 		for done := false; !done; {
 			if conn, err := net.Dial("tcp", r.PeerAddrList[i]); err == nil {
 				r.Peers[i] = conn
+				log.Printf("Successful connection from server %v to server %v\n", r.Id, i)
 				done = true
 			} else {
+				fmt.Printf("encountered an error %v when connecting %v to peer %v \n", err, r.Id, i)
 				time.Sleep(1e9)
 			}
 		}
@@ -199,16 +202,26 @@ func (r *Replica) waitForPeerConnections(done chan bool) {
 			continue
 		}
 		if _, err := io.ReadFull(conn, bs); err != nil {
-			fmt.Println("Connection establish error:", err)
+			fmt.Println("Connection establish error:", err, " trying to close port:")
+			err := conn.Close()
+			conn, err := r.Listener.Accept()
+			if err != nil {
+				fmt.Println("Accept error:", err)
+				continue
+			}
+			if _, err := io.ReadFull(conn, bs); err != nil {
+				fmt.Println("Connection establish error:", err)
+				continue
+			}
 			continue
 		}
+		fmt.Printf("Finished the connection process from %v to %v\n", r.Id, i)
 		id := int32(binary.LittleEndian.Uint32(bs))
 		r.Peers[id] = conn
 		r.PeerReaders[id] = bufio.NewReader(conn)
 		r.PeerWriters[id] = bufio.NewWriter(conn)
 		r.Alive[id] = true
 	}
-
 	done <- true
 }
 
@@ -326,6 +339,7 @@ func (r *Replica) SendMsg(peerId int32, code uint8, msg fastrpc.Serializable) {
 	w.WriteByte(code)
 	msg.Marshal(w)
 	w.Flush()
+	// log.Printf("FLUSHING from %v TO %v\n", r.Id, peerId)
 }
 
 func (r *Replica) SendMsgNoFlush(peerId int32, code uint8, msg fastrpc.Serializable) {

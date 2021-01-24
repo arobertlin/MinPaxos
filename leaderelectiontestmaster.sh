@@ -1,4 +1,4 @@
-bin/client -q 1 &
+bin/clientretry -q 1 &
 sleep 2
 
 echo "killing the leader, server 0"
@@ -10,4 +10,4 @@ echo "reviving server 0"
 bin/server -port 7070 -exec -dreply -durable &
 sleep 1
 
-bin/client -q 1 &
+# bin/clientretry -q 1 &

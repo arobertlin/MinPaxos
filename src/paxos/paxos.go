@@ -314,9 +314,11 @@ func (r *Replica) bcastAccept(instance int32, ballot int32, command []state.Comm
 			break
 		}
 		if !r.Alive[q] {
+			log.Printf("replica %v is not alive\n", q)
 			continue
 		}
 		sent++
+		log.Printf("Broacasting accept from replica %v to %v\n", r.Id, q)
 		r.SendMsg(q, r.acceptRPC, args)
 	}
 }

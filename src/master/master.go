@@ -113,6 +113,8 @@ func (master *Master) run() {
 
 func (master *Master) Register(args *masterproto.RegisterArgs, reply *masterproto.RegisterReply) error {
 
+	log.Printf("Trying to Register on addresson Master\n")
+
 	master.lock.Lock()
 	defer master.lock.Unlock()
 
