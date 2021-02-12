@@ -129,6 +129,11 @@ func main() {
 
 	before_total := time.Now()
 
+	// send bytes to let the replicas know this is a client connection
+	writers[leader].WriteByte(genericsmrproto.CLIENT)
+	args.Marshal(writers[leader])
+	writers[leader].Flush()
+
 	for j := 0; j < *rounds; j++ {
 
 		n := *reqsNb / *rounds

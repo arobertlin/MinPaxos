@@ -13,6 +13,8 @@ const (
 	PROPOSE_AND_READ_REPLY
 	GENERIC_SMR_BEACON
 	GENERIC_SMR_BEACON_REPLY
+	CLIENT
+	PEER
 )
 
 type Propose struct {
@@ -77,3 +79,7 @@ type BeTheLeaderArgs struct {
 
 type BeTheLeaderReply struct {
 }
+
+// type Config struct {
+// 	ReplicaId int32
+// }

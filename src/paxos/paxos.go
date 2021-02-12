@@ -27,20 +27,22 @@ type Replica struct {
 	commitShortChan     chan fastrpc.Serializable
 	prepareReplyChan    chan fastrpc.Serializable
 	acceptReplyChan     chan fastrpc.Serializable
-	prepareRPC          uint8
-	acceptRPC           uint8
-	commitRPC           uint8
-	commitShortRPC      uint8
-	prepareReplyRPC     uint8
-	acceptReplyRPC      uint8
-	IsLeader            bool        // does this replica think it is the leader
-	instanceSpace       []*Instance // the space of all instances (used and not yet used)
-	crtInstance         int32       // highest active instance number that this replica knows about
-	defaultBallot       int32       // default ballot for new instances (0 until a Prepare(ballot, instance->infinity) from a leader)
-	Shutdown            bool
-	counter             int
-	flush               bool
-	committedUpTo       int32
+	// configChan          chan fastrpc.Serializable
+	prepareRPC      uint8
+	acceptRPC       uint8
+	commitRPC       uint8
+	commitShortRPC  uint8
+	prepareReplyRPC uint8
+	acceptReplyRPC  uint8
+	// configRPC           uint8
+	IsLeader      bool        // does this replica think it is the leader
+	instanceSpace []*Instance // the space of all instances (used and not yet used)
+	crtInstance   int32       // highest active instance number that this replica knows about
+	defaultBallot int32       // default ballot for new instances (0 until a Prepare(ballot, instance->infinity) from a leader)
+	Shutdown      bool
+	counter       int
+	flush         bool
+	committedUpTo int32
 }
 
 type InstanceStatus int
@@ -75,6 +77,7 @@ func NewReplica(id int, peerAddrList []string, thrifty bool, exec bool, dreply b
 		make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
 		make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
 		make(chan fastrpc.Serializable, 3*genericsmr.CHAN_BUFFER_SIZE),
+		// make(chan fastrpc.Serializable, genericsmr.CHAN_BUFFER_SIZE),
 		0, 0, 0, 0, 0, 0,
 		false,
 		make([]*Instance, 15*1024*1024),
@@ -93,6 +96,7 @@ func NewReplica(id int, peerAddrList []string, thrifty bool, exec bool, dreply b
 	r.commitShortRPC = r.RegisterRPC(new(paxosproto.CommitShort), r.commitShortChan)
 	r.prepareReplyRPC = r.RegisterRPC(new(paxosproto.PrepareReply), r.prepareReplyChan)
 	r.acceptReplyRPC = r.RegisterRPC(new(paxosproto.AcceptReply), r.acceptReplyChan)
+	// r.configRPC = r.RegisterRPC(new(genericsmrproto.Config), r.configChan)
 
 	go r.run()
 
@@ -166,9 +170,12 @@ func (r *Replica) run() {
 
 	r.ConnectToPeers()
 
+	// Added as a test 1/25
+	// go r.WaitForPeerReconnections()
+
 	dlog.Println("Waiting for client connections")
 
-	go r.WaitForClientConnections()
+	go r.WaitForConnections()
 
 	if r.Exec {
 		go r.executeCommands()
@@ -318,7 +325,7 @@ func (r *Replica) bcastAccept(instance int32, ballot int32, command []state.Comm
 			continue
 		}
 		sent++
-		log.Printf("Broacasting accept from replica %v to %v\n", r.Id, q)
+		log.Printf("Broadcasting accept from replica %v to %v\n", r.Id, q)
 		r.SendMsg(q, r.acceptRPC, args)
 	}
 }
@@ -465,6 +472,7 @@ func (r *Replica) handleAccept(accept *paxosproto.Accept) {
 	var areply *paxosproto.AcceptReply
 
 	if inst == nil {
+		// log.Printf("inst = nil")
 		if accept.Ballot < r.defaultBallot {
 			areply = &paxosproto.AcceptReply{accept.Instance, FALSE, r.defaultBallot}
 		} else {
@@ -476,8 +484,10 @@ func (r *Replica) handleAccept(accept *paxosproto.Accept) {
 			areply = &paxosproto.AcceptReply{accept.Instance, TRUE, r.defaultBallot}
 		}
 	} else if inst.ballot > accept.Ballot {
+		// log.Printf("inst ballot > accept ballot")
 		areply = &paxosproto.AcceptReply{accept.Instance, FALSE, inst.ballot}
 	} else if inst.ballot < accept.Ballot {
+		// log.Printf("inst ballot < accept ballot")
 		inst.cmds = accept.Command
 		inst.ballot = accept.Ballot
 		inst.status = ACCEPTED
@@ -491,6 +501,7 @@ func (r *Replica) handleAccept(accept *paxosproto.Accept) {
 			inst.lb.clientProposals = nil
 		}
 	} else {
+		// log.Printf("inst != nil, inst ballow !<, !> accept ballot")
 		// reordered ACCEPT
 		r.instanceSpace[accept.Instance].cmds = accept.Command
 		if r.instanceSpace[accept.Instance].status != COMMITTED {

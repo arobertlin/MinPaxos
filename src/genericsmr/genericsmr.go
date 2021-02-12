@@ -122,6 +122,9 @@ func (r *Replica) BeTheLeader(args *genericsmrproto.BeTheLeaderArgs, reply *gene
 func (r *Replica) ConnectToPeers() {
 	var b [4]byte
 	bs := b[:4]
+	connbs := make([]byte, 1)
+	connbs[0] = byte(genericsmrproto.PEER)
+
 	done := make(chan bool)
 
 	go r.waitForPeerConnections(done)
@@ -139,6 +142,12 @@ func (r *Replica) ConnectToPeers() {
 				time.Sleep(1e9)
 			}
 		}
+
+		if _, err := r.Peers[i].Write(connbs); err != nil {
+			fmt.Println("Write connection type error:", err)
+			continue
+		}
+
 		binary.LittleEndian.PutUint32(bs, uint32(r.Id))
 		if _, err := r.Peers[i].Write(bs); err != nil {
 			fmt.Println("Write id error:", err)
@@ -191,8 +200,8 @@ func (r *Replica) ConnectToPeersNoListeners() {
 
 /* Peer (replica) connections dispatcher */
 func (r *Replica) waitForPeerConnections(done chan bool) {
-	var b [4]byte
-	bs := b[:4]
+	var b [5]byte
+	bs := b[:5]
 
 	r.Listener, _ = net.Listen("tcp", r.PeerAddrList[r.Id])
 	for i := r.Id + 1; i < int32(r.N); i++ {
@@ -215,8 +224,8 @@ func (r *Replica) waitForPeerConnections(done chan bool) {
 			}
 			continue
 		}
-		fmt.Printf("Finished the connection process from %v to %v\n", r.Id, i)
-		id := int32(binary.LittleEndian.Uint32(bs))
+		id := int32(binary.LittleEndian.Uint32(bs[1:5]))
+		fmt.Printf("Finished the connection process from %v to %v\n", r.Id, id)
 		r.Peers[id] = conn
 		r.PeerReaders[id] = bufio.NewReader(conn)
 		r.PeerWriters[id] = bufio.NewWriter(conn)
@@ -237,6 +246,65 @@ func (r *Replica) WaitForClientConnections() {
 
 		r.OnClientConnect <- true
 	}
+}
+
+/* Client connections dispatcher */
+func (r *Replica) WaitForConnections() {
+	var connType uint8
+
+	for !r.Shutdown {
+		conn, err := r.Listener.Accept()
+		if err != nil {
+			log.Println("Accept error:", err)
+			continue
+		}
+
+		reader := bufio.NewReader(conn)
+
+		if connType, err = reader.ReadByte(); err != nil {
+			break
+		}
+
+		log.Printf("received on server %v. types: client %v, peer %v, conntype %v\n", r.Id, genericsmrproto.CLIENT, genericsmrproto.PEER, connType)
+		switch uint8(connType) {
+
+		case genericsmrproto.CLIENT:
+			go r.clientListener(conn)
+			r.OnClientConnect <- true
+
+		case genericsmrproto.PEER:
+			go r.peerReconnector(conn, reader)
+
+		default:
+			log.Printf("Error: received unknown connection type %v\n", connType)
+		}
+	}
+}
+
+/* Client connections dispatcher */
+func (r *Replica) peerReconnector(conn net.Conn, reader *bufio.Reader) {
+	var b [4]byte
+	bs := b[:4]
+	var err error = nil
+
+	// log.Printf("peer message received on server %v\n", r.Id)
+	if bs, err = reader.Peek(4); err != nil {
+		log.Println("Error reading id from peer on reconnect:", err)
+	}
+
+	id := int32(binary.LittleEndian.Uint32(bs))
+	fmt.Println(id)
+
+	// discard the peeked bytes
+	reader.Discard(4)
+
+	fmt.Printf("Finished the reconnection process from %v to %v\n", r.Id, id)
+	r.Peers[id] = conn
+	r.PeerReaders[id] = bufio.NewReader(conn)
+	r.PeerWriters[id] = bufio.NewWriter(conn)
+	r.Alive[id] = true
+
+	go r.replicaListener(int(id), r.PeerReaders[id])
 }
 
 func (r *Replica) replicaListener(rid int, reader *bufio.Reader) {
