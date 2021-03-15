@@ -6,3 +6,5 @@ sleep 10
 
 echo "reviving server 2"
 bin/server -port 7072 -exec -dreply -durable &
+
+rm stable-store*

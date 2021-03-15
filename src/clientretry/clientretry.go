@@ -40,7 +40,7 @@ func main() {
 	flag.Parse()
 
 	runtime.GOMAXPROCS(*procs)
-
+	// randObj := rand.New(rand.NewSource(time.Now().UnixNano()))
 	randObj := rand.New(rand.NewSource(42))
 	zipf := rand.NewZipf(randObj, *s, *v, uint64(*reqsNb / *rounds + *eps))
 
@@ -101,15 +101,16 @@ func main() {
 		//fmt.Println(test[0:100])
 	}
 
-	for i := 0; i < N; i++ {
-		var err error
-		servers[i], err = net.Dial("tcp", rlReply.ReplicaList[i])
-		if err != nil {
-			log.Printf("Error connecting to replica %d\n", i)
-		}
-		readers[i] = bufio.NewReader(servers[i])
-		writers[i] = bufio.NewWriter(servers[i])
-	}
+	// old code
+	// for i := 0; i < N; i++ {
+	// 	var err error
+	// 	servers[i], err = net.Dial("tcp", rlReply.ReplicaList[i])
+	// 	if err != nil {
+	// 		log.Printf("Error connecting to replica %d\n", i)
+	// 	}
+	// 	readers[i] = bufio.NewReader(servers[i])
+	// 	writers[i] = bufio.NewWriter(servers[i])
+	// }
 
 	successful = make([]int, N)
 	leader := 0
@@ -121,6 +122,14 @@ func main() {
 		}
 		leader = reply.LeaderId
 		log.Printf("The leader is replica %d\n", leader)
+
+		var err error
+		servers[leader], err = net.Dial("tcp", rlReply.ReplicaList[leader])
+		if err != nil {
+			log.Printf("Error connecting to replica %d\n", leader)
+		}
+		readers[leader] = bufio.NewReader(servers[leader])
+		writers[leader] = bufio.NewWriter(servers[leader])
 	}
 
 	var id int32 = 0
@@ -164,7 +173,9 @@ func main() {
 				args.Command.Op = state.GET
 			}
 			args.Command.K = state.Key(karray[i])
-			args.Command.V = state.Value(i)
+			// args.Command.V = state.Value(i)
+			myrand := rand.New(rand.NewSource(time.Now().UnixNano()))
+			args.Command.V = state.Value(myrand.Int63())
 			//args.Timestamp = time.Now().UnixNano()
 			if !*fast {
 				if *noLeader {

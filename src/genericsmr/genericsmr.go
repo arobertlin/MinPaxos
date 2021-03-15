@@ -95,8 +95,11 @@ func NewReplica(id int, peerAddrList []string, thrifty bool, exec bool, dreply b
 
 	var err error
 
-	if r.StableStore, err = os.Create(fmt.Sprintf("stable-store-replica%d", r.Id)); err != nil {
-		log.Fatal(err)
+	// open stablestore if already exists, create if not
+	if r.StableStore, err = os.Open(fmt.Sprintf("stable-store-replica%d", r.Id)); err != nil {
+		if r.StableStore, err = os.Create(fmt.Sprintf("stable-store-replica%d", r.Id)); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	for i := 0; i < r.N; i++ {
@@ -198,6 +201,91 @@ func (r *Replica) ConnectToPeersNoListeners() {
 	log.Printf("Replica id: %d. Done connecting to peers\n", r.Id)
 }
 
+func (r *Replica) ReconnectToPeers() {
+	var b [4]byte
+	bs := b[:4]
+	connbs := make([]byte, 1)
+	connbs[0] = byte(genericsmrproto.PEER)
+
+	//connect to peers
+	for i := 0; i < r.N; i++ {
+		if i == int(r.Id) {
+			continue
+		}
+
+		log.Printf("Server %v is trying to reconnect to server %v\n", r.Id, i)
+		if conn, err := net.Dial("tcp", r.PeerAddrList[i]); err == nil {
+			r.Peers[i] = conn
+			log.Printf("Successful reconnection from server %v to server %v\n", r.Id, i)
+		} else {
+			fmt.Printf("encountered an error %v when reconnecting %v to peer %v \n", err, r.Id, i)
+			time.Sleep(1e9)
+		}
+
+		if _, err := r.Peers[i].Write(connbs); err != nil {
+			fmt.Println("Write connection type error:", err)
+			continue
+		}
+
+		binary.LittleEndian.PutUint32(bs, uint32(r.Id))
+		if _, err := r.Peers[i].Write(bs); err != nil {
+			fmt.Println("Write id error:", err)
+			continue
+		}
+		r.Alive[i] = true
+		r.PeerReaders[i] = bufio.NewReader(r.Peers[i])
+		r.PeerWriters[i] = bufio.NewWriter(r.Peers[i])
+	}
+
+	log.Printf("Replica id: %d. Finished reconnection loop\n", r.Id)
+
+	for rid, reader := range r.PeerReaders {
+		if int32(rid) == r.Id {
+			continue
+		}
+		if r.Alive[rid] == false {
+			log.Printf("couldn't connect to server %v\n", rid)
+			continue
+		}
+		go r.replicaListener(rid, reader)
+	}
+}
+
+func (r *Replica) ReconnectToPeer(q int32) {
+	var b [4]byte
+	bs := b[:4]
+	connbs := make([]byte, 1)
+	connbs[0] = byte(genericsmrproto.PEER)
+
+	//connect to peers
+
+	log.Printf("Server %v is trying to reconnect to server %v\n", r.Id, q)
+	if conn, err := net.Dial("tcp", r.PeerAddrList[q]); err == nil {
+		r.Peers[q] = conn
+		log.Printf("Successful reconnection from server %v to server %v\n", r.Id, q)
+	} else {
+		fmt.Printf("encountered an error %v when reconnecting %v to peer %v \n", err, r.Id, q)
+		time.Sleep(1e9)
+	}
+
+	if _, err := r.Peers[q].Write(connbs); err != nil {
+		fmt.Println("Write connection type error:", err)
+	}
+
+	binary.LittleEndian.PutUint32(bs, uint32(r.Id))
+	if _, err := r.Peers[q].Write(bs); err != nil {
+		fmt.Println("Write id error:", err)
+	}
+
+	r.Alive[q] = true
+	r.PeerReaders[q] = bufio.NewReader(r.Peers[q])
+	r.PeerWriters[q] = bufio.NewWriter(r.Peers[q])
+
+	log.Printf("Replica id: %d. Finished reconnection loop\n", r.Id)
+
+	go r.replicaListener(int(q), r.PeerReaders[q])
+}
+
 /* Peer (replica) connections dispatcher */
 func (r *Replica) waitForPeerConnections(done chan bool) {
 	var b [5]byte
@@ -211,9 +299,10 @@ func (r *Replica) waitForPeerConnections(done chan bool) {
 			continue
 		}
 		if _, err := io.ReadFull(conn, bs); err != nil {
-			fmt.Println("Connection establish error:", err, " trying to close port:")
+			fmt.Printf("Connection establish error: %v. trying to close connection on %v to %v\n", err, r.Id, i)
 			err := conn.Close()
 			conn, err := r.Listener.Accept()
+			log.Println("GOT PAST ACCEPT")
 			if err != nil {
 				fmt.Println("Accept error:", err)
 				continue
@@ -253,15 +342,18 @@ func (r *Replica) WaitForConnections() {
 	var connType uint8
 
 	for !r.Shutdown {
+		fmt.Printf("entering wait for connections for server %v\n", r.Id)
 		conn, err := r.Listener.Accept()
 		if err != nil {
 			log.Println("Accept error:", err)
 			continue
 		}
+		fmt.Printf("after accept connections for server %v\n", r.Id)
 
 		reader := bufio.NewReader(conn)
 
 		if connType, err = reader.ReadByte(); err != nil {
+			fmt.Printf("error %v", err)
 			break
 		}
 
@@ -335,7 +427,7 @@ func (r *Replica) replicaListener(rid int, reader *bufio.Reader) {
 			}
 			//TODO: UPDATE STUFF
 			r.Ewma[rid] = 0.99*r.Ewma[rid] + 0.01*float64(rdtsc.Cputicks()-gbeaconReply.Timestamp)
-			log.Println(r.Ewma)
+			// log.Println(r.Ewma)
 			break
 
 		default:
@@ -350,6 +442,7 @@ func (r *Replica) replicaListener(rid int, reader *bufio.Reader) {
 			}
 		}
 	}
+	log.Println("exiting replica")
 }
 
 func (r *Replica) clientListener(conn net.Conn) {
@@ -370,6 +463,7 @@ func (r *Replica) clientListener(conn net.Conn) {
 			if err = prop.Unmarshal(reader); err != nil {
 				break
 			}
+			fmt.Println("sending propose")
 			r.ProposeChan <- &Propose{prop, writer}
 			break
 
@@ -402,12 +496,19 @@ func (r *Replica) RegisterRPC(msgObj fastrpc.Serializable, notify chan fastrpc.S
 	return code
 }
 
-func (r *Replica) SendMsg(peerId int32, code uint8, msg fastrpc.Serializable) {
+func (r *Replica) SendMsg(peerId int32, code uint8, msg fastrpc.Serializable) bool {
+	ok := true
 	w := r.PeerWriters[peerId]
+	// log.Printf("writer for %v, %v\n", peerId, w)
 	w.WriteByte(code)
 	msg.Marshal(w)
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		log.Printf("ERROR %v\n", err)
+		ok = false
+	}
 	// log.Printf("FLUSHING from %v TO %v\n", r.Id, peerId)
+	return ok
 }
 
 func (r *Replica) SendMsgNoFlush(peerId int32, code uint8, msg fastrpc.Serializable) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bareminpaxos"
 	"epaxos"
 	"flag"
 	"fmt"
@@ -26,12 +27,14 @@ var myAddr *string = flag.String("addr", "", "Server address (this machine). Def
 var doMencius *bool = flag.Bool("m", false, "Use Mencius as the replication protocol. Defaults to false.")
 var doGpaxos *bool = flag.Bool("g", false, "Use Generalized Paxos as the replication protocol. Defaults to false.")
 var doEpaxos *bool = flag.Bool("e", false, "Use EPaxos as the replication protocol. Defaults to false.")
+var doMinpaxos *bool = flag.Bool("min", false, "Use MinPaxos as the replication protocol. Defaults to false.")
 var procs *int = flag.Int("p", 2, "GOMAXPROCS. Defaults to 2")
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var thrifty = flag.Bool("thrifty", false, "Use only as many messages as strictly required for inter-replica communication.")
 var exec = flag.Bool("exec", false, "Execute commands.")
 var dreply = flag.Bool("dreply", false, "Reply to client only after command has been executed.")
 var beacon = flag.Bool("beacon", false, "Send beacons to other replicas to compare their relative speeds.")
+var heartbeat = flag.Bool("heartbeat", false, "MinPaxos leader sends other replicas a heartbeat.")
 var durable = flag.Bool("durable", false, "Log to a stable store (i.e., a file in the current dir).")
 
 func main() {
@@ -67,6 +70,10 @@ func main() {
 	} else if *doGpaxos {
 		log.Println("Starting Generalized Paxos replica...")
 		rep := gpaxos.NewReplica(replicaId, nodeList, *thrifty, *exec, *dreply)
+		rpc.Register(rep)
+	} else if *doMinpaxos {
+		log.Println("Starting MinPaxos replica...")
+		rep := bareminpaxos.NewReplica(replicaId, nodeList, *thrifty, *exec, *dreply, *heartbeat, *durable)
 		rpc.Register(rep)
 	} else {
 		log.Println("Starting classic Paxos replica...")

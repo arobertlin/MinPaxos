@@ -11,9 +11,20 @@ sleep 10
 
 echo "reviving server 1"
 echo "reviving server 2"
-bin/server -port 7071 -exec -dreply -durable &
-bin/server -port 7072 -exec -dreply -durable &
+bin/server -port 7071 -min -exec -dreply -durable &
+bin/server -port 7072 -min -exec -dreply -durable &
 
 sleep 10
 
 bin/clientretry -q 1 &
+sleep 3
+bin/clientretry -q 1 &
+sleep 3
+bin/clientretry -q 1 &
+sleep 3
+bin/clientretry -q 1 &
+sleep 3
+bin/clientretry -q 1 &
+sleep 3
+
+rm stable-store*
