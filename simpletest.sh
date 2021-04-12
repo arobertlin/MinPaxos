@@ -1,3 +1,3 @@
-bin/clientretry -q 1 &
+bin/clientretry -q 1000 -r 1 &
 
 rm stable-store*

@@ -9,6 +9,94 @@ import (
 	"sync"
 )
 
+func (t *ProposeReplyTS) BinarySize() (nbytes int, sizeKnown bool) {
+	return 0, false
+}
+
+type ProposeReplyTSCache struct {
+	mu    sync.Mutex
+	cache []*ProposeReplyTS
+}
+
+func NewProposeReplyTSCache() *ProposeReplyTSCache {
+	c := &ProposeReplyTSCache{}
+	c.cache = make([]*ProposeReplyTS, 0)
+	return c
+}
+
+func (p *ProposeReplyTSCache) Get() *ProposeReplyTS {
+	var t *ProposeReplyTS
+	p.mu.Lock()
+	if len(p.cache) > 0 {
+		t = p.cache[len(p.cache)-1]
+		p.cache = p.cache[0:(len(p.cache) - 1)]
+	}
+	p.mu.Unlock()
+	if t == nil {
+		t = &ProposeReplyTS{}
+	}
+	return t
+}
+func (p *ProposeReplyTSCache) Put(t *ProposeReplyTS) {
+	p.mu.Lock()
+	p.cache = append(p.cache, t)
+	p.mu.Unlock()
+}
+func (t *ProposeReplyTS) Marshal(wire io.Writer) {
+	var b [8]byte
+	var bs []byte
+	bs = b[:5]
+	bs[0] = byte(t.OK)
+	tmp32 := t.CommandId
+	bs[1] = byte(tmp32)
+	bs[2] = byte(tmp32 >> 8)
+	bs[3] = byte(tmp32 >> 16)
+	bs[4] = byte(tmp32 >> 24)
+	wire.Write(bs)
+	t.Value.Marshal(wire)
+	bs = b[:8]
+	tmp64 := t.Timestamp
+	bs[0] = byte(tmp64)
+	bs[1] = byte(tmp64 >> 8)
+	bs[2] = byte(tmp64 >> 16)
+	bs[3] = byte(tmp64 >> 24)
+	bs[4] = byte(tmp64 >> 32)
+	bs[5] = byte(tmp64 >> 40)
+	bs[6] = byte(tmp64 >> 48)
+	bs[7] = byte(tmp64 >> 56)
+	wire.Write(bs)
+	bs = b[:4]
+	tmp32 = t.Leader
+	bs[0] = byte(tmp32)
+	bs[1] = byte(tmp32 >> 8)
+	bs[2] = byte(tmp32 >> 16)
+	bs[3] = byte(tmp32 >> 24)
+}
+
+func (t *ProposeReplyTS) Unmarshal(wire io.Reader) error {
+	var b [8]byte
+	var bs []byte
+	bs = b[:5]
+	if _, err := io.ReadAtLeast(wire, bs, 5); err != nil {
+		return err
+	}
+	t.OK = uint8(bs[0])
+	t.CommandId = int32((uint32(bs[1]) | (uint32(bs[2]) << 8) | (uint32(bs[3]) << 16) | (uint32(bs[4]) << 24)))
+	t.Value.Unmarshal(wire)
+	bs = b[:8]
+	if _, err := io.ReadAtLeast(wire, bs, 8); err != nil {
+		return err
+	}
+	t.Timestamp = int64((uint64(bs[0]) | (uint64(bs[1]) << 8) | (uint64(bs[2]) << 16) | (uint64(bs[3]) << 24) | (uint64(bs[4]) << 32) | (uint64(bs[5]) << 40) | (uint64(bs[6]) << 48) | (uint64(bs[7]) << 56)))
+
+	bs = b[:4]
+	if _, err := io.ReadAtLeast(wire, bs, 4); err != nil {
+		return err
+	}
+	t.Leader = int32((uint32(bs[0]) | (uint32(bs[1]) << 8) | (uint32(bs[2]) << 16) | (uint32(bs[3]) << 24)))
+	return nil
+}
+
 func (t *Instance) Marshal(wire io.Writer) {
 	var b [9]byte
 	var bs []byte

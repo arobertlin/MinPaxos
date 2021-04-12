@@ -35,6 +35,7 @@ var successful []int
 
 var rarray []int
 var rsp []bool
+var leader int
 
 func main() {
 	flag.Parse()
@@ -68,7 +69,7 @@ func main() {
 	karray := make([]int64, *reqsNb / *rounds + *eps)
 	put := make([]bool, *reqsNb / *rounds + *eps)
 	perReplicaCount := make([]int, N)
-	test := make([]int, *reqsNb / *rounds + *eps)
+	// test := make([]int, *reqsNb / *rounds + *eps)
 	for i := 0; i < len(rarray); i++ {
 		r := rand.Intn(N)
 		rarray[i] = r
@@ -91,7 +92,7 @@ func main() {
 			}
 		} else {
 			karray[i] = int64(zipf.Uint64())
-			test[karray[i]]++
+			// test[karray[i]]++
 		}
 	}
 	if *conflicts >= 0 {
@@ -113,37 +114,50 @@ func main() {
 	// }
 
 	successful = make([]int, N)
-	leader := 0
+	leader = 0
 
-	if *noLeader == false {
-		reply := new(masterproto.GetLeaderReply)
-		if err = master.Call("Master.GetLeader", new(masterproto.GetLeaderArgs), reply); err != nil {
-			log.Fatalf("Error making the GetLeader RPC\n")
+	s := 0
+	for s == 0 {
+
+		if *noLeader == false {
+			// reply := new(masterproto.GetLeaderReply)
+			// if err = master.Call("Master.GetLeader", new(masterproto.GetLeaderArgs), reply); err != nil {
+			// 	log.Fatalf("Error making the GetLeader RPC\n")
+			// }
+			// leader = reply.LeaderId
+			log.Printf("The leader is replica %d\n", leader)
+
+			var err error
+			servers[leader], err = net.Dial("tcp", rlReply.ReplicaList[leader])
+			if err != nil {
+				log.Printf("Error connecting to replica %d\n", leader)
+
+				// might need to catch an error here if none of the servers can be contacted
+				for i := 0; i < N; i++ {
+					var err error
+					servers[i], err = net.Dial("tcp", rlReply.ReplicaList[i])
+					if err == nil {
+						leader = i
+						continue
+					} else {
+						log.Printf("Error connecting to replica %d\n", i)
+					}
+				}
+			}
+			readers[leader] = bufio.NewReader(servers[leader])
+			writers[leader] = bufio.NewWriter(servers[leader])
 		}
-		leader = reply.LeaderId
-		log.Printf("The leader is replica %d\n", leader)
 
-		var err error
-		servers[leader], err = net.Dial("tcp", rlReply.ReplicaList[leader])
-		if err != nil {
-			log.Printf("Error connecting to replica %d\n", leader)
-		}
-		readers[leader] = bufio.NewReader(servers[leader])
-		writers[leader] = bufio.NewWriter(servers[leader])
-	}
+		var id int32 = 0
+		done := make(chan bool, N)
+		args := genericsmrproto.Propose{id, state.Command{state.PUT, 0, 0}, 0}
 
-	var id int32 = 0
-	done := make(chan bool, N)
-	args := genericsmrproto.Propose{id, state.Command{state.PUT, 0, 0}, 0}
+		before_total := time.Now()
 
-	before_total := time.Now()
-
-	// send bytes to let the replicas know this is a client connection
-	writers[leader].WriteByte(genericsmrproto.CLIENT)
-	args.Marshal(writers[leader])
-	writers[leader].Flush()
-
-	for j := 0; j < *rounds; j++ {
+		// send bytes to let the replicas know this is a client connection
+		writers[leader].WriteByte(genericsmrproto.CLIENT)
+		args.Marshal(writers[leader])
+		writers[leader].Flush()
 
 		n := *reqsNb / *rounds
 
@@ -154,13 +168,7 @@ func main() {
 			}
 		}
 
-		if *noLeader {
-			for i := 0; i < N; i++ {
-				go waitReplies(readers, i, perReplicaCount[i], done)
-			}
-		} else {
-			go waitReplies(readers, leader, n, done)
-		}
+		go waitReplies(readers, leader, n, done)
 
 		before := time.Now()
 
@@ -178,14 +186,11 @@ func main() {
 			args.Command.V = state.Value(myrand.Int63())
 			//args.Timestamp = time.Now().UnixNano()
 			if !*fast {
-				if *noLeader {
-					leader = rarray[i]
-				}
 
 				// check if the leader is active before trying to use the writer
-				log.Printf("attempt flush of leader %v\n", leader)
+				// log.Printf("attempt flush of leader %v\n", leader)
 				safeFlush(writers[leader], leader)
-				log.Printf("finished attempted flush of leader %v\n", leader)
+				// log.Printf("finished attempted flush of leader %v\n", leader)
 
 				writers[leader].WriteByte(genericsmrproto.PROPOSE)
 				args.Marshal(writers[leader])
@@ -211,22 +216,15 @@ func main() {
 				}
 			}
 		}
-		log.Println("Final flush after finishing every round")
-		for i := 0; i < N; i++ {
-			// writers[i].Flush()
-			// log.Printf("Flushing server %d\n", i)
-			safeFlush(writers[i], i)
-		}
+		// log.Println("Final flush after finishing every round")
+		// for i := 0; i < N; i++ {
+		// 	// writers[i].Flush()
+		// 	// log.Printf("Flushing server %d\n", i)
+		// 	safeFlush(writers[i], i)
+		// }
 
-		err := false
-		if *noLeader {
-			for i := 0; i < N; i++ {
-				e := <-done
-				err = e || err
-			}
-		} else {
-			err = <-done
-		}
+		err1 := false
+		err1 = <-done
 
 		after := time.Now()
 
@@ -240,27 +238,26 @@ func main() {
 			}
 		}
 
-		if err {
+		if err1 {
 			if *noLeader {
 				N = N - 1
 			} else {
-				reply := new(masterproto.GetLeaderReply)
-				master.Call("Master.GetLeader", new(masterproto.GetLeaderArgs), reply)
-				leader = reply.LeaderId
-				log.Printf("New leader is replica %d\n", leader)
+				// reply := new(masterproto.GetLeaderReply)
+				// master.Call("Master.GetLeader", new(masterproto.GetLeaderArgs), reply)
+				// leader = reply.LeaderId
+				log.Printf("error detected, our new leader is replica %d\n", leader)
 			}
 		}
+
+		after_total := time.Now()
+		fmt.Printf("Test took %v\n", after_total.Sub(before_total))
+
+		for _, succ := range successful {
+			s += succ
+		}
+
+		fmt.Printf("Successful: %d\n", s)
 	}
-
-	after_total := time.Now()
-	fmt.Printf("Test took %v\n", after_total.Sub(before_total))
-
-	s := 0
-	for _, succ := range successful {
-		s += succ
-	}
-
-	fmt.Printf("Successful: %d\n", s)
 
 	for _, client := range servers {
 		if client != nil {
@@ -274,7 +271,7 @@ func safeFlush(writer *bufio.Writer, i int) {
 	// fmt.Println("in the safe flush function")
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("discovered during flush that server %d is offline: %s\n", i, err)
+			// log.Printf("discovered during flush that server %d is offline: %s\n", i, err)
 		}
 	}()
 	writer.Flush()
@@ -284,7 +281,7 @@ func safeFlush(writer *bufio.Writer, i int) {
 func safeRead(reader *bufio.Reader, i int) {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("discovered during read that server %d is offline: %s\n", i, err)
+			// log.Printf("discovered during read that server %d is offline: %s\n", i, err)
 		}
 	}()
 }
@@ -295,6 +292,17 @@ func waitReplies(readers []*bufio.Reader, leader int, n int, done chan bool) {
 			log.Printf("recovered in waitreplies while flushing reader %v -- %v\n", leader, err)
 		}
 	}()
+	ticker := time.NewTicker(1 * time.Second)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				// do stuff
+				log.Println(successful[leader])
+			}
+		}
+	}()
+
 	e := false
 
 	reply := new(genericsmrproto.ProposeReplyTS)
@@ -305,6 +313,7 @@ func waitReplies(readers []*bufio.Reader, leader int, n int, done chan bool) {
 			e = true
 			continue
 		}
+		// fmt.Println("received a reply!")
 		//fmt.Println(reply.Value)
 		if *check {
 			if rsp[reply.CommandId] {
@@ -314,7 +323,16 @@ func waitReplies(readers []*bufio.Reader, leader int, n int, done chan bool) {
 		}
 		if reply.OK != 0 {
 			successful[leader]++
+			if successful[leader]%10 == 0 {
+				// log.Println(successful[leader])
+			}
 		}
+		// not working currently
+		// if leader != int(reply.Leader) {
+		// 	fmt.Printf("old leader detected: %v\n", int(leader))
+		// 	fmt.Printf("New leader detected: %v\n", int(reply.Leader))
+		// 	leader = int(reply.Leader)
+		// }
 	}
 	done <- e
 }

@@ -416,7 +416,7 @@ func (r *Replica) bcastPrepare(ballot int32) {
 	}()
 
 	for i := 0; i <= 5; i++ {
-		log.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
+		// log.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
 	}
 
 	args := &minpaxosproto.Prepare{r.Id, ballot, r.committedUpTo}
@@ -437,6 +437,7 @@ func (r *Replica) bcastPrepare(ballot int32) {
 			continue
 		}
 		sent++
+		fmt.Println("now sending message")
 		ok := r.SendMsg(q, r.prepareRPC, args)
 		if !ok {
 			log.Printf("sendmsg to %v didn't go through, setting r.Alive to false\n", q)
@@ -616,10 +617,10 @@ func (r *Replica) bcastCommit(instance int32, ballot int32, command []state.Comm
 
 func (r *Replica) handlePropose(propose *genericsmr.Propose) {
 	if r.Leader != r.Id || r.prepareBookkeeping.prepareOKs <= int32(r.N)>>1 {
-		// log.Printf("HANDLEPROPOSE, leader %v, r.id %v, prepareoks %v\n", r.Leader, r.Id, r.prepareBookkeeping.prepareOKs)
+		log.Printf("HANDLEPROPOSE, leader %v, r.id %v, prepareoks %v\n", r.Leader, r.Id, r.prepareBookkeeping.prepareOKs)
 		// set timer to start election/prepare if you don't receive an accept in x amount of time
 		// either do this and have client resend to correct one, or just resend to correct one yourself
-		preply := &genericsmrproto.ProposeReplyTS{FALSE, -1, state.NIL, 0}
+		preply := &genericsmrproto.ProposeReplyTS{FALSE, -1, state.NIL, 0, r.Leader}
 		r.ReplyProposeTS(preply, propose.Reply)
 		return
 	}
@@ -667,17 +668,19 @@ func (r *Replica) handlePropose(propose *genericsmr.Propose) {
 	// 		&LeaderBookkeeping{proposals, 0, 0, 0, 0}}
 
 	// rebroadcast a value that has not been accepted yet, and the the client know to resend their message to you
+
 	if r.committedUpTo < instNo-1 {
 		// r.crtInstance--
 		for i := (int32(math.Max(float64(0), float64(instNo-6)))); i <= instNo-1; i++ {
-			log.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
+			// log.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
 		}
-		log.Println(r.committedUpTo + 1)
-		log.Println(instNo)
-		K := r.instanceSpace[r.committedUpTo+1].Cmds
-		fmt.Println(len(K))
-		r.bcastAccept(r.committedUpTo+1, r.defaultBallot, r.committedUpTo, r.instanceSpace[r.committedUpTo+1].Cmds, r.prepareBookkeeping.peerCommits)
-		preply := &genericsmrproto.ProposeReplyTS{FALSE, -1, state.NIL, 0}
+		// log.Println(r.committedUpTo + 1)
+		// log.Println(instNo)
+		// K := r.instanceSpace[r.committedUpTo+1].Cmds
+		// fmt.Println(len(K))
+		// need to calculate catch up log from peer commmits, not just send peer commits
+		// r.bcastAccept(r.committedUpTo+1, r.defaultBallot, r.committedUpTo, r.instanceSpace[r.committedUpTo+1].Cmds, r.prepareBookkeeping.peerCommits)
+		preply := &genericsmrproto.ProposeReplyTS{FALSE, -1, state.NIL, 0, r.Leader}
 		r.ReplyProposeTS(preply, propose.Reply)
 		return
 	}
@@ -689,7 +692,7 @@ func (r *Replica) handlePropose(propose *genericsmr.Propose) {
 			r.instanceSpace[instNo] = &minpaxosproto.Instance{
 				r.defaultBallot,
 				minpaxosproto.PREPARED,
-				&minpaxosproto.LeaderBookkeeping{0, 0, 0, nil},
+				&minpaxosproto.LeaderBookkeeping{0, 0, 0, proposals},
 				cmds}
 
 			r.recordInstanceMetadata(r.instanceSpace[instNo], instNo)
@@ -761,6 +764,15 @@ func (r *Replica) handleAccept(accept *minpaxosproto.Accept) {
 
 	log.Printf("in handle accept, committedUpTo is %v, accept committed up to is %v\n", r.committedUpTo, accept.LastCommitted)
 
+	// treat accept from far in the future as a prepare
+	if r.defaultBallot < accept.Ballot || (r.committedUpTo+1) < accept.LastCommitted {
+		r.defaultBallot = accept.Ballot
+		r.committedUpTo = accept.LastCommitted
+		preply := &minpaxosproto.PrepareReply{r.Id, r.committedUpTo, TRUE, r.defaultBallot, r.committedUpTo, nil, nil}
+		r.replyPrepare(accept.LeaderId, preply)
+		return
+	}
+
 	// update committed from piggyback commit and/or update many that you were missing during prepare
 	if r.committedUpTo < accept.LastCommitted && len(accept.CatchUpLog) != 0 {
 		for i := r.committedUpTo + 1; i <= accept.LastCommitted; i++ {
@@ -768,18 +780,11 @@ func (r *Replica) handleAccept(accept *minpaxosproto.Accept) {
 			r.recordInstanceMetadata(r.instanceSpace[i], i)
 			r.recordCommands(r.instanceSpace[i].Cmds)
 			r.sync()
+			r.committedUpTo = accept.LastCommitted
 		}
-
-		r.committedUpTo = accept.LastCommitted
 	}
 
-	// treat accept from far in the future as a prepare
-	if r.defaultBallot < accept.Ballot || (r.committedUpTo+1) < accept.LastCommitted {
-		r.defaultBallot = accept.Ballot
-		preply := &minpaxosproto.PrepareReply{r.Id, r.committedUpTo + 1, TRUE, r.defaultBallot, r.committedUpTo, nil, nil}
-		r.replyPrepare(accept.LeaderId, preply)
-
-	} else if r.defaultBallot == accept.Ballot {
+	if r.defaultBallot == accept.Ballot {
 		inst := &minpaxosproto.Instance{
 			accept.Ballot,
 			minpaxosproto.ACCEPTED,
@@ -797,7 +802,7 @@ func (r *Replica) handleAccept(accept *minpaxosproto.Accept) {
 	}
 
 	for i := (int32(math.Max(float64(0), float64(accept.Instance-5)))); i <= accept.Instance; i++ {
-		log.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
+		// log.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
 	}
 }
 
@@ -916,13 +921,13 @@ func (r *Replica) handlePrepareReply(preply *minpaxosproto.PrepareReply) {
 	// log catch up / prepare to catch up other logs
 	if r.defaultBallot == preply.Ballot {
 		r.prepareBookkeeping.prepareOKs++
+		r.prepareBookkeeping.peerCommits[preply.Id] = preply.LastCommitted
 		// do this if so leader can learn of accepted values for the most recent instances
 		if preply.Instance > r.prepareBookkeeping.highestInstanceNumber || (preply.Instance == r.prepareBookkeeping.highestInstanceNumber && preply.Ballot > r.prepareBookkeeping.maxRecvBallot) {
 			// need to check if there is a command sent
 			r.prepareBookkeeping.cmds = preply.Command
 			r.prepareBookkeeping.maxRecvBallot = preply.Ballot
 			log.Printf("in preparereply, last commit from server %v was %v\n", preply.Id, preply.LastCommitted)
-			r.prepareBookkeeping.peerCommits[preply.Id] = preply.LastCommitted
 			r.prepareBookkeeping.highestInstanceNumber = preply.Instance
 		}
 
@@ -1019,16 +1024,21 @@ func (r *Replica) handleAcceptReply(areply *minpaxosproto.AcceptReply) {
 	if areply.OK == TRUE {
 		inst.Lb.AcceptOKs++
 		if inst.Lb.AcceptOKs+1 > int32(r.N)>>1 {
+			// if inst.Lb.AcceptOKs == int32(r.N)>>1 {
 			log.Printf("instance %v committed on leader %v\n", areply.Instance, r.Id)
 			inst.Status = minpaxosproto.COMMITTED
+			// log.Printf("inst.lb.client proposals: %v\n", inst.Lb.ClientProposals)
 			if inst.Lb.ClientProposals != nil && !r.Dreply {
+				log.Printf("sending back a message to the original client, leader %v\n", r.Leader)
 				// give client the all clear
+				log.Println(len(inst.Cmds))
 				for i := 0; i < len(inst.Cmds); i++ {
 					propreply := &genericsmrproto.ProposeReplyTS{
 						TRUE,
 						inst.Lb.ClientProposals[i].CommandId,
 						state.NIL,
-						inst.Lb.ClientProposals[i].Timestamp}
+						inst.Lb.ClientProposals[i].Timestamp,
+						r.Leader}
 					r.ReplyProposeTS(propreply, inst.Lb.ClientProposals[i].Reply)
 				}
 			}
@@ -1037,6 +1047,7 @@ func (r *Replica) handleAcceptReply(areply *minpaxosproto.AcceptReply) {
 			r.sync() //is this necessary?
 
 			r.committedUpTo = areply.Instance
+			// }
 			r.prepareBookkeeping.peerCommits[areply.Id] = areply.Instance - 1
 			// log.Printf("PEER COMMITS FOR %v, %v\n", areply.Id, areply.Instance-1)
 			// need to update peer commits here. might need to change accept reply structure.
@@ -1068,7 +1079,8 @@ func (r *Replica) executeCommands() {
 							TRUE,
 							inst.Lb.ClientProposals[j].CommandId,
 							val,
-							inst.Lb.ClientProposals[j].Timestamp}
+							inst.Lb.ClientProposals[j].Timestamp,
+							r.Leader}
 						r.ReplyProposeTS(propreply, inst.Lb.ClientProposals[j].Reply)
 					}
 				}

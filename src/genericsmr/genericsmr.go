@@ -463,7 +463,7 @@ func (r *Replica) clientListener(conn net.Conn) {
 			if err = prop.Unmarshal(reader); err != nil {
 				break
 			}
-			fmt.Println("sending propose")
+			// fmt.Println("sending propose")
 			r.ProposeChan <- &Propose{prop, writer}
 			break
 
@@ -521,6 +521,7 @@ func (r *Replica) ReplyPropose(reply *genericsmrproto.ProposeReply, w *bufio.Wri
 	//r.clientMutex.Lock()
 	//defer r.clientMutex.Unlock()
 	//w.WriteByte(genericsmrproto.PROPOSE_REPLY)
+	w.Flush()
 	reply.Marshal(w)
 	w.Flush()
 }

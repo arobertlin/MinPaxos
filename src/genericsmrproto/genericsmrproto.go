@@ -33,6 +33,7 @@ type ProposeReplyTS struct {
 	CommandId int32
 	Value     state.Value
 	Timestamp int64
+	Leader    int32
 }
 
 type Read struct {

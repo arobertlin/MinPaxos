@@ -268,6 +268,7 @@ func waitReplies(readers []*bufio.Reader, leader int, n int, done chan bool) {
 
 	reply := new(genericsmrproto.ProposeReplyTS)
 	for i := 0; i < n; i++ {
+		fmt.Println("received a reply!")
 		if err := reply.Unmarshal(readers[leader]); err != nil {
 			fmt.Println("Error when reading:", err)
 			e = true

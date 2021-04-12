@@ -37,6 +37,14 @@ const (
 	COMMIT_SHORT
 )
 
+type ProposeReplyTS struct {
+	OK        uint8
+	CommandId int32
+	Value     state.Value
+	Timestamp int64
+	Leader    int32
+}
+
 type Prepare struct {
 	LeaderId int32
 	// Instance   int32

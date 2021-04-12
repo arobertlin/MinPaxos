@@ -14,8 +14,8 @@ go install minpaxosproto
 echo "finished installing most recent saved versions"
 
 bin/master &
-bin/server -port 7070 -min -exec -dreply -durable &
+bin/server -port 7070 -min -durable &
 sleep 2
-bin/server -port 7071 -min -exec -dreply -durable &
+bin/server -port 7071 -min -durable &
 sleep 2
-bin/server -port 7072 -min -exec -dreply -durable &
+bin/server -port 7072 -min -durable &
