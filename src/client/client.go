@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"dlog"
 	"flag"
 	"fmt"
 	"genericsmrproto"
@@ -105,9 +106,9 @@ func main() {
 		var err error
 		servers[i], err = net.Dial("tcp", rlReply.ReplicaList[i])
 		if err != nil {
-			log.Printf("Error connecting to replica %d\n", i)
+			dlog.Printf("Error connecting to replica %d\n", i)
 		}
-		log.Println(servers[i])
+		dlog.Println(servers[i])
 		readers[i] = bufio.NewReader(servers[i])
 		writers[i] = bufio.NewWriter(servers[i])
 	}
@@ -121,7 +122,7 @@ func main() {
 			log.Fatalf("Error making the GetLeader RPC\n")
 		}
 		leader = reply.LeaderId
-		log.Printf("The leader is replica %d\n", leader)
+		dlog.Printf("The leader is replica %d\n", leader)
 	}
 
 	var id int32 = 0
@@ -152,7 +153,7 @@ func main() {
 		before := time.Now()
 
 		for i := 0; i < n+*eps; i++ {
-			// dlog.Printf("Sending proposal %d\n", id)
+			// ddlog.Printf("Sending proposal %d\n", id)
 			args.CommandId = id
 			if put[i] {
 				args.Command.Op = state.PUT
@@ -184,7 +185,7 @@ func main() {
 			if i%1 == 1 {
 				for j := 0; j < N; j++ {
 					// added to catch null pointers to servers that have shutdown
-					// log.Printf("Flushing server %d\n", i)
+					// dlog.Printf("Flushing server %d\n", i)
 					writers[j].Flush()
 					// safeFlush(writers[i], i)
 				}
@@ -223,7 +224,7 @@ func main() {
 				reply := new(masterproto.GetLeaderReply)
 				master.Call("Master.GetLeader", new(masterproto.GetLeaderArgs), reply)
 				leader = reply.LeaderId
-				log.Printf("New leader is replica %d\n", leader)
+				dlog.Printf("New leader is replica %d\n", leader)
 			}
 		}
 	}
@@ -249,7 +250,7 @@ func main() {
 func safeFlush(writer *bufio.Writer, i int) {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("discovered during flush that server %d is offline: %s\n", i, err)
+			dlog.Printf("discovered during flush that server %d is offline: %s\n", i, err)
 		}
 	}()
 	writer.Flush()
@@ -258,7 +259,7 @@ func safeFlush(writer *bufio.Writer, i int) {
 func safeRead(reader *bufio.Reader, i int) {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("discovered during read that server %d is offline: %s\n", i, err)
+			dlog.Printf("discovered during read that server %d is offline: %s\n", i, err)
 		}
 	}()
 }

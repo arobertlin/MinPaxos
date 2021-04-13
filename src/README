@@ -1,17 +1,5 @@
-Built with Go version go1.1.2
+To boot up MinPaxos, run ./bareminrun.sh
 
-To build:
+The other shell scripts were designed to test different functionalities of MinPaxas such as killing and reviving servers, changing leadership, and testing latency vs. throughput.
 
-    export GOPATH=[...]/git/epaxos/
-
-    go install master
-    go install server
-    go install client
-
-To run:
-
-    bin/master &
-    bin/server -port 7070 &
-    bin/server -port 7071 &
-    bin/server -port 7072 &
-    bin/client
+These scripts have not been consolidated to a single testing script

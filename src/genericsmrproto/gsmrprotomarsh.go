@@ -698,6 +698,7 @@ func (p *ProposeReplyTSCache) Put(t *ProposeReplyTS) {
 	p.cache = append(p.cache, t)
 	p.mu.Unlock()
 }
+
 func (t *ProposeReplyTS) Marshal(wire io.Writer) {
 	var b [8]byte
 	var bs []byte
@@ -727,7 +728,17 @@ func (t *ProposeReplyTS) Marshal(wire io.Writer) {
 	bs[1] = byte(tmp32 >> 8)
 	bs[2] = byte(tmp32 >> 16)
 	bs[3] = byte(tmp32 >> 24)
+	wire.Write(bs)
 }
+
+// func (t *ProposeReplyTS) Marshal(wire io.Writer) {
+// 	var b [1]byte
+// 	var bs []byte
+// 	bs = b[:1]
+// 	bs[0] = byte(t.OK)
+// 	wire.Write(bs)
+
+// }
 
 func (t *ProposeReplyTS) Unmarshal(wire io.Reader) error {
 	var b [8]byte

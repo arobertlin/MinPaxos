@@ -8,7 +8,6 @@ import (
 	"genericsmr"
 	"genericsmrproto"
 	"io"
-	"log"
 	"math"
 	"minpaxosproto"
 	"net"
@@ -133,7 +132,7 @@ func (r *Replica) getDataFromStableStore() {
 			if err == io.EOF {
 				return
 			} else {
-				log.Printf("error: %v")
+				dlog.Printf("error: %v")
 				panic(err)
 			}
 		}
@@ -208,7 +207,7 @@ func (r *Replica) checkWriter(q int32) {
 	// fmt.Println("in the safe flush function")
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("discovered during flush that server %d is offline: %s\n", q, err)
+			dlog.Printf("discovered during flush that server %d is offline: %s\n", q, err)
 			r.Alive[q] = false
 		}
 	}()
@@ -252,7 +251,7 @@ func (r *Replica) run() {
 		fmt.Println("error accessing stablestore")
 	}
 
-	log.Printf("file size %v\n", fi.Size())
+	dlog.Printf("file size %v\n", fi.Size())
 	if fi.Size() == 0 {
 		r.ConnectToPeers()
 		initialBoot = true
@@ -393,7 +392,7 @@ func (r *Replica) updateCommittedUpTo() {
 }
 
 func (r *Replica) bcastPrepare(ballot int32) {
-	log.Printf("in bcast prepare")
+	dlog.Printf("in bcast prepare")
 	for r.instanceSpace[r.crtInstance] != nil {
 		r.crtInstance++
 	}
@@ -402,7 +401,7 @@ func (r *Replica) bcastPrepare(ballot int32) {
 	instNo := r.committedUpTo
 	// if the server has already accepted a value for the next instance
 	if r.committedUpTo != -1 && r.crtInstance > r.committedUpTo {
-		log.Printf("currentinstance %v on the leader %v has already accepted a value\n", r.crtInstance, r.Id)
+		dlog.Printf("currentinstance %v on the leader %v has already accepted a value\n", r.crtInstance, r.Id)
 		cmds = r.instanceSpace[r.crtInstance].Cmds
 		instNo = r.crtInstance
 	}
@@ -411,12 +410,12 @@ func (r *Replica) bcastPrepare(ballot int32) {
 
 	defer func() {
 		if err := recover(); err != nil {
-			log.Println("Prepare bcast failed:", err)
+			dlog.Println("Prepare bcast failed:", err)
 		}
 	}()
 
 	for i := 0; i <= 5; i++ {
-		// log.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
+		// dlog.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
 	}
 
 	args := &minpaxosproto.Prepare{r.Id, ballot, r.committedUpTo}
@@ -433,14 +432,14 @@ func (r *Replica) bcastPrepare(ballot int32) {
 			break
 		}
 		if !r.Alive[q] {
-			log.Printf("not alive, didnt' try to send to %v\n", q)
+			dlog.Printf("not alive, didnt' try to send to %v\n", q)
 			continue
 		}
 		sent++
 		fmt.Println("now sending message")
 		ok := r.SendMsg(q, r.prepareRPC, args)
 		if !ok {
-			log.Printf("sendmsg to %v didn't go through, setting r.Alive to false\n", q)
+			dlog.Printf("sendmsg to %v didn't go through, setting r.Alive to false\n", q)
 			r.Alive[q] = false
 		}
 	}
@@ -451,7 +450,7 @@ var pa minpaxosproto.Accept
 func (r *Replica) bcastAccept(instance int32, ballot int32, lastcommitted int32, command []state.Command, peercommits []int32) {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Println("Accept bcast failed:", err)
+			dlog.Println("Accept bcast failed:", err)
 		}
 	}()
 
@@ -475,16 +474,16 @@ func (r *Replica) bcastAccept(instance int32, ballot int32, lastcommitted int32,
 			break
 		}
 		if !r.Alive[q] {
-			log.Printf("replica %v is not alive attempting to reconnect\n", q)
+			dlog.Printf("replica %v is not alive attempting to reconnect\n", q)
 			// attempt to reconnect to replica
 			r.ReconnectToPeer(q)
 		}
 
 		sent++
-		log.Printf("Broadcasting accept from replica %v to %v\n", r.Id, q)
+		dlog.Printf("Broadcasting accept from replica %v to %v\n", r.Id, q)
 
-		// log.Println(peercommits[q])
-		// log.Println(lastcommitted)
+		// dlog.Println(peercommits[q])
+		// dlog.Println(lastcommitted)
 
 		var partiallog []minpaxosproto.Instance
 
@@ -495,13 +494,13 @@ func (r *Replica) bcastAccept(instance int32, ballot int32, lastcommitted int32,
 
 		// setting the log to not throw an error if the receiving server has 0 commits
 		if peercommits[q] < 0 && r.crtInstance >= 0 {
-			// log.Printf("peercommits of %v: %v\n", q, peercommits[q])
+			// dlog.Printf("peercommits of %v: %v\n", q, peercommits[q])
 			for i := int32(0); i <= lastcommitted; i++ {
 				partiallog = append(partiallog, *r.instanceSpace[i])
 			}
 			// if the leader does not have an empty log
 		} else if r.crtInstance >= 0 {
-			log.Printf("peer commits %v\n", peercommits[q])
+			dlog.Printf("peer commits %v\n", peercommits[q])
 			for i := int32(peercommits[q] + 1); i <= lastcommitted; i++ {
 				partiallog = append(partiallog, *r.instanceSpace[i])
 			}
@@ -509,7 +508,7 @@ func (r *Replica) bcastAccept(instance int32, ballot int32, lastcommitted int32,
 			partiallog = nil
 		}
 		if len(partiallog) > 0 {
-			log.Printf("length of partial log: %v\n", len(partiallog))
+			dlog.Printf("length of partial log: %v\n", len(partiallog))
 		}
 		pa.CatchUpLog = partiallog
 		args := &pa
@@ -523,7 +522,7 @@ func (r *Replica) bcastAccept(instance int32, ballot int32, lastcommitted int32,
 func (r *Replica) sendAccept(toreplica int32, instance int32, ballot int32, lastcommitted int32, command []state.Command, peercommits []int32) {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Println("Accept bcast failed:", err)
+			dlog.Println("Accept bcast failed:", err)
 		}
 	}()
 
@@ -547,11 +546,11 @@ func (r *Replica) sendAccept(toreplica int32, instance int32, ballot int32, last
 	//args := &minpaxosproto.Accept{r.Id, instance, ballot, command}
 
 	if !r.Alive[toreplica] {
-		log.Printf("replica %v is not alive, attempting to reconnect\n", toreplica)
+		dlog.Printf("replica %v is not alive, attempting to reconnect\n", toreplica)
 		r.ReconnectToPeer(toreplica)
 	}
 
-	log.Printf("directly sending accept from replica %v to %v\n", r.Id, toreplica)
+	dlog.Printf("directly sending accept from replica %v to %v\n", r.Id, toreplica)
 
 	args := &pa
 	ok := r.SendMsg(toreplica, r.acceptRPC, args)
@@ -566,7 +565,7 @@ var pcs minpaxosproto.CommitShort
 func (r *Replica) bcastCommit(instance int32, ballot int32, command []state.Command) {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Println("Commit bcast failed:", err)
+			dlog.Println("Commit bcast failed:", err)
 		}
 	}()
 	pc.LeaderId = r.Id
@@ -617,7 +616,7 @@ func (r *Replica) bcastCommit(instance int32, ballot int32, command []state.Comm
 
 func (r *Replica) handlePropose(propose *genericsmr.Propose) {
 	if r.Leader != r.Id || r.prepareBookkeeping.prepareOKs <= int32(r.N)>>1 {
-		log.Printf("HANDLEPROPOSE, leader %v, r.id %v, prepareoks %v\n", r.Leader, r.Id, r.prepareBookkeeping.prepareOKs)
+		dlog.Printf("HANDLEPROPOSE, leader %v, r.id %v, prepareoks %v\n", r.Leader, r.Id, r.prepareBookkeeping.prepareOKs)
 		// set timer to start election/prepare if you don't receive an accept in x amount of time
 		// either do this and have client resend to correct one, or just resend to correct one yourself
 		preply := &genericsmrproto.ProposeReplyTS{FALSE, -1, state.NIL, 0, r.Leader}
@@ -626,7 +625,7 @@ func (r *Replica) handlePropose(propose *genericsmr.Propose) {
 	}
 
 	for r.instanceSpace[r.crtInstance] != nil {
-		// log.Printf("%v, %v\n", r.crtInstance, r.instanceSpace[r.crtInstance])
+		// dlog.Printf("%v, %v\n", r.crtInstance, r.instanceSpace[r.crtInstance])
 		r.crtInstance++
 	}
 
@@ -672,10 +671,10 @@ func (r *Replica) handlePropose(propose *genericsmr.Propose) {
 	if r.committedUpTo < instNo-1 {
 		// r.crtInstance--
 		for i := (int32(math.Max(float64(0), float64(instNo-6)))); i <= instNo-1; i++ {
-			// log.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
+			// dlog.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
 		}
-		// log.Println(r.committedUpTo + 1)
-		// log.Println(instNo)
+		// dlog.Println(r.committedUpTo + 1)
+		// dlog.Println(instNo)
 		// K := r.instanceSpace[r.committedUpTo+1].Cmds
 		// fmt.Println(len(K))
 		// need to calculate catch up log from peer commmits, not just send peer commits
@@ -757,32 +756,32 @@ func (r *Replica) handleAccept(accept *minpaxosproto.Accept) {
 	// need to be able to check if we already accepted this same message previously and not send an ok.
 	if r.instanceSpace[accept.Instance] != nil {
 		if r.instanceSpace[accept.Instance].Status == minpaxosproto.ACCEPTED && r.instanceSpace[accept.Instance].Ballot == accept.Ballot {
-			log.Printf("in handle accept, ignoring a resent accept from leader\n")
+			dlog.Printf("in handle accept, ignoring a resent accept from leader\n")
 			return
 		}
 	}
 
-	log.Printf("in handle accept, committedUpTo is %v, accept committed up to is %v\n", r.committedUpTo, accept.LastCommitted)
+	dlog.Printf("in handle accept, committedUpTo is %v, accept committed up to is %v\n", r.committedUpTo, accept.LastCommitted)
 
 	// treat accept from far in the future as a prepare
-	if r.defaultBallot < accept.Ballot || (r.committedUpTo+1) < accept.LastCommitted {
-		r.defaultBallot = accept.Ballot
-		r.committedUpTo = accept.LastCommitted
-		preply := &minpaxosproto.PrepareReply{r.Id, r.committedUpTo, TRUE, r.defaultBallot, r.committedUpTo, nil, nil}
-		r.replyPrepare(accept.LeaderId, preply)
-		return
-	}
+	// if r.defaultBallot < accept.Ballot || (r.committedUpTo+1) < accept.LastCommitted {
+	// 	r.defaultBallot = accept.Ballot
+	// 	r.committedUpTo = accept.LastCommitted
+	// 	preply := &minpaxosproto.PrepareReply{r.Id, r.committedUpTo, TRUE, r.defaultBallot, r.committedUpTo, nil, nil}
+	// 	r.replyPrepare(accept.LeaderId, preply)
+	// 	return
+	// }
 
 	// update committed from piggyback commit and/or update many that you were missing during prepare
-	if r.committedUpTo < accept.LastCommitted && len(accept.CatchUpLog) != 0 {
-		for i := r.committedUpTo + 1; i <= accept.LastCommitted; i++ {
-			r.instanceSpace[i] = &accept.CatchUpLog[i-(r.committedUpTo+1)]
-			r.recordInstanceMetadata(r.instanceSpace[i], i)
-			r.recordCommands(r.instanceSpace[i].Cmds)
-			r.sync()
-			r.committedUpTo = accept.LastCommitted
-		}
-	}
+	// if r.committedUpTo < accept.LastCommitted && len(accept.CatchUpLog) != 0 {
+	// 	for i := r.committedUpTo + 1; i <= accept.LastCommitted; i++ {
+	// 		r.instanceSpace[i] = &accept.CatchUpLog[i-(r.committedUpTo+1)]
+	// 		r.recordInstanceMetadata(r.instanceSpace[i], i)
+	// 		r.recordCommands(r.instanceSpace[i].Cmds)
+	// 		r.sync()
+	// 		r.committedUpTo = accept.LastCommitted
+	// 	}
+	// }
 
 	if r.defaultBallot == accept.Ballot {
 		inst := &minpaxosproto.Instance{
@@ -802,13 +801,13 @@ func (r *Replica) handleAccept(accept *minpaxosproto.Accept) {
 	}
 
 	for i := (int32(math.Max(float64(0), float64(accept.Instance-5)))); i <= accept.Instance; i++ {
-		// log.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
+		// dlog.Printf("log of server %v, instance %v: %+v\n", r.Id, i, r.instanceSpace[i])
 	}
 }
 
 // old stuff
 // if inst == nil {
-// 	// log.Printf("inst = nil")
+// 	// dlog.Printf("inst = nil")
 // 	if accept.Ballot < r.defaultBallot {
 // 		areply = &minpaxosproto.AcceptReply{accept.Instance, FALSE, r.defaultBallot}
 // 	} else {
@@ -820,10 +819,10 @@ func (r *Replica) handleAccept(accept *minpaxosproto.Accept) {
 // 		areply = &minpaxosproto.AcceptReply{accept.Instance, TRUE, r.defaultBallot}
 // 	}
 // } else if inst.ballot > accept.Ballot {
-// 	// log.Printf("inst ballot > accept ballot")
+// 	// dlog.Printf("inst ballot > accept ballot")
 // 	areply = &minpaxosproto.AcceptReply{accept.Instance, FALSE, inst.ballot}
 // } else if inst.ballot < accept.Ballot {
-// 	// log.Printf("inst ballot < accept ballot")
+// 	// dlog.Printf("inst ballot < accept ballot")
 // 	inst.Cmds = accept.Command
 // 	inst.ballot = accept.Ballot
 // 	inst.status = ACCEPTED
@@ -837,7 +836,7 @@ func (r *Replica) handleAccept(accept *minpaxosproto.Accept) {
 // 		inst.Lb.ClientProposals = nil
 // 	}
 // } else {
-// 	// log.Printf("inst != nil, inst ballow !<, !> accept ballot")
+// 	// dlog.Printf("inst != nil, inst ballow !<, !> accept ballot")
 // 	// reordered ACCEPT
 // 	r.instanceSpace[accept.Instance].cmds = accept.Command
 // 	if r.instanceSpace[accept.Instance].status != COMMITTED {
@@ -911,8 +910,8 @@ func (r *Replica) handleCommitShort(commit *minpaxosproto.CommitShort) {
 }
 
 func (r *Replica) handlePrepareReply(preply *minpaxosproto.PrepareReply) {
-	log.Printf("default ballot %v, preply ballot %v\n", r.defaultBallot, preply.Ballot)
-	log.Println(preply)
+	dlog.Printf("default ballot %v, preply ballot %v\n", r.defaultBallot, preply.Ballot)
+	dlog.Println(preply)
 	// might still want to send something... not sure
 	if r.defaultBallot > preply.Ballot {
 		return
@@ -927,7 +926,7 @@ func (r *Replica) handlePrepareReply(preply *minpaxosproto.PrepareReply) {
 			// need to check if there is a command sent
 			r.prepareBookkeeping.cmds = preply.Command
 			r.prepareBookkeeping.maxRecvBallot = preply.Ballot
-			log.Printf("in preparereply, last commit from server %v was %v\n", preply.Id, preply.LastCommitted)
+			dlog.Printf("in preparereply, last commit from server %v was %v\n", preply.Id, preply.LastCommitted)
 			r.prepareBookkeeping.highestInstanceNumber = preply.Instance
 		}
 
@@ -941,8 +940,8 @@ func (r *Replica) handlePrepareReply(preply *minpaxosproto.PrepareReply) {
 		}
 
 		// if there's a new value in a new instance that we've heard from other replicas, send accept for this value
-		log.Printf("highest instance number from preplies: %v\n", r.prepareBookkeeping.highestInstanceNumber)
-		log.Printf("committed up to on leader: %v\n", r.committedUpTo)
+		dlog.Printf("highest instance number from preplies: %v\n", r.prepareBookkeeping.highestInstanceNumber)
+		dlog.Printf("committed up to on leader: %v\n", r.committedUpTo)
 		if r.prepareBookkeeping.prepareOKs == int32(r.N)>>1 && r.prepareBookkeeping.highestInstanceNumber > r.committedUpTo {
 			// check if there are any accept, if no accepts, use the instance after your last commit
 
@@ -1024,32 +1023,32 @@ func (r *Replica) handleAcceptReply(areply *minpaxosproto.AcceptReply) {
 	if areply.OK == TRUE {
 		inst.Lb.AcceptOKs++
 		if inst.Lb.AcceptOKs+1 > int32(r.N)>>1 {
-			// if inst.Lb.AcceptOKs == int32(r.N)>>1 {
-			log.Printf("instance %v committed on leader %v\n", areply.Instance, r.Id)
-			inst.Status = minpaxosproto.COMMITTED
-			// log.Printf("inst.lb.client proposals: %v\n", inst.Lb.ClientProposals)
-			if inst.Lb.ClientProposals != nil && !r.Dreply {
-				log.Printf("sending back a message to the original client, leader %v\n", r.Leader)
-				// give client the all clear
-				log.Println(len(inst.Cmds))
-				for i := 0; i < len(inst.Cmds); i++ {
-					propreply := &genericsmrproto.ProposeReplyTS{
-						TRUE,
-						inst.Lb.ClientProposals[i].CommandId,
-						state.NIL,
-						inst.Lb.ClientProposals[i].Timestamp,
-						r.Leader}
-					r.ReplyProposeTS(propreply, inst.Lb.ClientProposals[i].Reply)
+			if inst.Lb.AcceptOKs == int32(r.N)>>1 {
+				dlog.Printf("instance %v committed on leader %v\n", areply.Instance, r.Id)
+				inst.Status = minpaxosproto.COMMITTED
+				// dlog.Printf("inst.lb.client proposals: %v\n", inst.Lb.ClientProposals)
+				if inst.Lb.ClientProposals != nil && !r.Dreply {
+					dlog.Printf("sending back a message to the original client, leader %v\n", r.Leader)
+					// give client the all clear
+					dlog.Println(len(inst.Cmds))
+					for i := 0; i < len(inst.Cmds); i++ {
+						propreply := &genericsmrproto.ProposeReplyTS{
+							TRUE,
+							inst.Lb.ClientProposals[i].CommandId,
+							state.NIL,
+							inst.Lb.ClientProposals[i].Timestamp,
+							r.Leader}
+						r.ReplyProposeTS(propreply, inst.Lb.ClientProposals[i].Reply)
+					}
 				}
+
+				r.recordInstanceMetadata(r.instanceSpace[areply.Instance], areply.Instance)
+				r.sync() //is this necessary?
+
+				r.committedUpTo = areply.Instance
 			}
-
-			r.recordInstanceMetadata(r.instanceSpace[areply.Instance], areply.Instance)
-			r.sync() //is this necessary?
-
-			r.committedUpTo = areply.Instance
-			// }
 			r.prepareBookkeeping.peerCommits[areply.Id] = areply.Instance - 1
-			// log.Printf("PEER COMMITS FOR %v, %v\n", areply.Id, areply.Instance-1)
+			// dlog.Printf("PEER COMMITS FOR %v, %v\n", areply.Id, areply.Instance-1)
 			// need to update peer commits here. might need to change accept reply structure.
 		}
 		// } else {

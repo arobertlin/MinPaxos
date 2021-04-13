@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"dlog"
 	"flag"
 	"fmt"
 	"genericsmrproto"
@@ -107,7 +108,7 @@ func main() {
 	// 	var err error
 	// 	servers[i], err = net.Dial("tcp", rlReply.ReplicaList[i])
 	// 	if err != nil {
-	// 		log.Printf("Error connecting to replica %d\n", i)
+	// 		dlog.Printf("Error connecting to replica %d\n", i)
 	// 	}
 	// 	readers[i] = bufio.NewReader(servers[i])
 	// 	writers[i] = bufio.NewWriter(servers[i])
@@ -125,12 +126,12 @@ func main() {
 			// 	log.Fatalf("Error making the GetLeader RPC\n")
 			// }
 			// leader = reply.LeaderId
-			log.Printf("The leader is replica %d\n", leader)
+			dlog.Printf("The leader is replica %d\n", leader)
 
 			var err error
 			servers[leader], err = net.Dial("tcp", rlReply.ReplicaList[leader])
 			if err != nil {
-				log.Printf("Error connecting to replica %d\n", leader)
+				dlog.Printf("Error connecting to replica %d\n", leader)
 
 				// might need to catch an error here if none of the servers can be contacted
 				for i := 0; i < N; i++ {
@@ -140,7 +141,7 @@ func main() {
 						leader = i
 						continue
 					} else {
-						log.Printf("Error connecting to replica %d\n", i)
+						dlog.Printf("Error connecting to replica %d\n", i)
 					}
 				}
 			}
@@ -173,7 +174,7 @@ func main() {
 		before := time.Now()
 
 		for i := 0; i < n+*eps; i++ {
-			// dlog.Printf("Sending proposal %d\n", id)
+			// ddlog.Printf("Sending proposal %d\n", id)
 			args.CommandId = id
 			if put[i] {
 				args.Command.Op = state.PUT
@@ -188,9 +189,9 @@ func main() {
 			if !*fast {
 
 				// check if the leader is active before trying to use the writer
-				// log.Printf("attempt flush of leader %v\n", leader)
-				safeFlush(writers[leader], leader)
-				// log.Printf("finished attempted flush of leader %v\n", leader)
+				// dlog.Printf("attempt flush of leader %v\n", leader)
+				// safeFlush(writers[leader], leader)
+				// dlog.Printf("finished attempted flush of leader %v\n", leader)
 
 				writers[leader].WriteByte(genericsmrproto.PROPOSE)
 				args.Marshal(writers[leader])
@@ -207,21 +208,21 @@ func main() {
 			// if i%100 == 0 {
 
 			// flush every message
-			if i%1 == 0 {
-				for j := 0; j < N; j++ {
-					// added to catch null pointers to servers that have shutdown
-					// log.Printf("Flushing server %d\n", j)
-					// writers[j].Flush()
-					safeFlush(writers[j], j)
-				}
-			}
+			// if i%1 == 0 {
+			// 	for j := 0; j < N; j++ {
+			// 		// added to catch null pointers to servers that have shutdown
+			// 		// dlog.Printf("Flushing server %d\n", j)
+			// 		// writers[j].Flush()
+			// 		safeFlush(writers[j], j)
+			// 	}
+			// }
 		}
-		// log.Println("Final flush after finishing every round")
-		// for i := 0; i < N; i++ {
-		// 	// writers[i].Flush()
-		// 	// log.Printf("Flushing server %d\n", i)
-		// 	safeFlush(writers[i], i)
-		// }
+		dlog.Println("Final flush after finishing every round")
+		for i := 0; i < N; i++ {
+			// writers[i].Flush()
+			// dlog.Printf("Flushing server %d\n", i)
+			safeFlush(writers[i], i)
+		}
 
 		err1 := false
 		err1 = <-done
@@ -245,7 +246,7 @@ func main() {
 				// reply := new(masterproto.GetLeaderReply)
 				// master.Call("Master.GetLeader", new(masterproto.GetLeaderArgs), reply)
 				// leader = reply.LeaderId
-				log.Printf("error detected, our new leader is replica %d\n", leader)
+				dlog.Printf("error detected, our new leader is replica %d\n", leader)
 			}
 		}
 
@@ -271,7 +272,7 @@ func safeFlush(writer *bufio.Writer, i int) {
 	// fmt.Println("in the safe flush function")
 	defer func() {
 		if err := recover(); err != nil {
-			// log.Printf("discovered during flush that server %d is offline: %s\n", i, err)
+			// dlog.Printf("discovered during flush that server %d is offline: %s\n", i, err)
 		}
 	}()
 	writer.Flush()
@@ -281,7 +282,7 @@ func safeFlush(writer *bufio.Writer, i int) {
 func safeRead(reader *bufio.Reader, i int) {
 	defer func() {
 		if err := recover(); err != nil {
-			// log.Printf("discovered during read that server %d is offline: %s\n", i, err)
+			// dlog.Printf("discovered during read that server %d is offline: %s\n", i, err)
 		}
 	}()
 }
@@ -289,7 +290,7 @@ func safeRead(reader *bufio.Reader, i int) {
 func waitReplies(readers []*bufio.Reader, leader int, n int, done chan bool) {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("recovered in waitreplies while flushing reader %v -- %v\n", leader, err)
+			dlog.Printf("recovered in waitreplies while flushing reader %v -- %v\n", leader, err)
 		}
 	}()
 	ticker := time.NewTicker(1 * time.Second)
@@ -324,7 +325,7 @@ func waitReplies(readers []*bufio.Reader, leader int, n int, done chan bool) {
 		if reply.OK != 0 {
 			successful[leader]++
 			if successful[leader]%10 == 0 {
-				// log.Println(successful[leader])
+				// dlog.Println(successful[leader])
 			}
 		}
 		// not working currently
